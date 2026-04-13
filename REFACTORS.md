@@ -19,6 +19,12 @@ This document records all refactors applied from the legacy script to the curren
 - Introduced clear responsibilities per class and explicit dependency wiring in main().
 - Removed global variables entirely.
 
+3. Security and resilience hardening pass
+- Replaced hardcoded runtime credentials with environment-based configuration.
+- Added safer credential comparison and hidden password input.
+- Added input validation, command normalization, and error handling.
+- Improved file persistence reliability with atomic writes.
+
 ## Detailed Refactors
 
 ### 1) Removed global variables
@@ -171,6 +177,80 @@ Why:
 Impact:
 - No runtime impact in existing flow.
 
+### 10) Moved credentials to environment variables
+
+Refactor:
+- `main()` now loads:
+  - `APP_USERNAME`
+  - `APP_PASSWORD`
+- Application exits with a configuration message when either variable is missing.
+
+Why:
+- Eliminates hardcoded runtime secrets in application code.
+
+Impact:
+- Refactored script now requires environment setup before execution.
+
+### 11) Hardened credential checks
+
+Refactor:
+- `AuthenticationService.authenticate()` now uses `hmac.compare_digest()`.
+
+Why:
+- Reduces timing leakage risk compared to direct string equality.
+
+Impact:
+- Login behavior is equivalent with improved safety characteristics.
+
+### 12) Hid password input
+
+Refactor:
+- `Application.run()` now uses `getpass.getpass("Pass: ")`.
+
+Why:
+- Prevents password echoing in terminal.
+
+Impact:
+- Better operator security with same authentication flow.
+
+### 13) Added input validation constraints
+
+Refactor:
+- `ItemRepository.add()` now:
+  - trims whitespace
+  - rejects empty values
+  - rejects values over 500 characters
+
+Why:
+- Guards against invalid input and unbounded values.
+
+Impact:
+- Invalid entries now raise `ValueError` handled by CLI messaging.
+
+### 14) Hardened persistence with atomic write strategy
+
+Refactor:
+- `JsonFileItemWriter.save()` now writes via temporary file, flushes/syncs, then atomically replaces destination.
+- Ensures parent directory exists before write.
+
+Why:
+- Reduces risk of partially written/corrupted data on interruptions.
+
+Impact:
+- Save remains JSON-based but is more resilient under failure conditions.
+
+### 15) Added command normalization and runtime exception handling
+
+Refactor:
+- Commands now use `.strip().lower()`.
+- Command loop handles `ValueError` and `OSError` with user-friendly output.
+
+Why:
+- Improves CLI usability and robustness for common runtime failure modes.
+
+Impact:
+- Input handling is more forgiving; failures are clearer and non-fatal when recoverable.
+
 ## SOLID Mapping
 
 ### S - Single Responsibility Principle
@@ -203,6 +283,10 @@ Preserved:
 Changed intentionally:
 - `save` now writes JSON-formatted data (still in `data.txt`) instead of Python `str(list)` representation.
 - Unknown command handling now returns a clear message.
+- Refactored script credentials now come from environment variables instead of hardcoded values.
+- Password input in refactored script is hidden via `getpass`.
+- `add` now enforces non-empty input and max length.
+- Command parsing now trims and lowercases user input.
 
 ## Potential Next Refactors (Optional)
 

@@ -1,7 +1,12 @@
+import getpass
+import hmac
 import json
+import os
+import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 
 @dataclass
@@ -25,7 +30,9 @@ class AuthenticationService:
     def authenticate(self, username: str, password: str) -> bool:
         """Return True when provided credentials match configured credentials."""
 
-        return username == self._username and password == self._password
+        return hmac.compare_digest(username, self._username) and hmac.compare_digest(
+            password, self._password
+        )
 
 
 class ItemRepository:
@@ -39,8 +46,14 @@ class ItemRepository:
     def add(self, value: str) -> None:
         """Create and store a new item using the provided value."""
 
+        clean_value = value.strip()
+        if not clean_value:
+            raise ValueError("Value cannot be empty.")
+        if len(clean_value) > 500:
+            raise ValueError("Value is too long (max 500 characters).")
+
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        item = Item(item_id=len(self._items) + 1, value=value, created_at=timestamp)
+        item = Item(item_id=len(self._items) + 1, value=clean_value, created_at=timestamp)
         self._items.append(item)
 
     def list_all(self) -> list[Item]:
@@ -58,11 +71,28 @@ class JsonFileItemWriter:
         self._output_path = output_path
 
     def save(self, items: list[Item]) -> None:
-        """Serialize the given items and write them to disk as JSON."""
+        """Serialize items and write them atomically to disk as JSON."""
 
         serializable_items = [asdict(item) for item in items]
-        with self._output_path.open("w", encoding="utf-8") as file_obj:
-            json.dump(serializable_items, file_obj, indent=2)
+        self._output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        temp_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=str(self._output_path.parent),
+                delete=False,
+            ) as file_obj:
+                json.dump(serializable_items, file_obj, indent=2)
+                file_obj.flush()
+                os.fsync(file_obj.fileno())
+                temp_path = Path(file_obj.name)
+
+            temp_path.replace(self._output_path)
+        finally:
+            if temp_path and temp_path.exists():
+                temp_path.unlink(missing_ok=True)
 
 
 class ItemService:
@@ -114,7 +144,7 @@ class Application:
         """Execute the interactive login and command loop."""
 
         username = input("User: ")
-        password = input("Pass: ")
+        password = getpass.getpass("Pass: ")
 
         if not self._auth_service.authenticate(username, password):
             print("Wrong!")
@@ -122,28 +152,42 @@ class Application:
 
         print("Welcome")
         while True:
-            command = input("What to do? (add/show/save/exit): ")
+            command = input("What to do? (add/show/save/exit): ").strip().lower()
             if command == "exit":
                 break
-            if command == "add":
-                value = input("Value: ")
-                print(self._item_service.add_item(value))
-                continue
-            if command == "show":
-                for line in self._item_service.show_items():
-                    print(line)
-                continue
-            if command == "save":
-                print(self._item_service.save_items())
-                continue
+            try:
+                if command == "add":
+                    value = input("Value: ")
+                    print(self._item_service.add_item(value))
+                    continue
+                if command == "show":
+                    for line in self._item_service.show_items():
+                        print(line)
+                    continue
+                if command == "save":
+                    print(self._item_service.save_items())
+                    continue
 
-            print("Unknown command")
+                print("Unknown command")
+            except ValueError as error:
+                print(f"Error: {error}")
+            except OSError as error:
+                print(f"I/O error: {error}")
 
 
 def main() -> None:
     """Compose dependencies and start the CLI application."""
 
-    auth_service = AuthenticationService(username="admin", password="12345")
+    configured_username = os.getenv("APP_USERNAME")
+    configured_password = os.getenv("APP_PASSWORD")
+    if not configured_username or not configured_password:
+        print("Configuration error: set APP_USERNAME and APP_PASSWORD environment variables.")
+        return
+
+    auth_service = AuthenticationService(
+        username=configured_username,
+        password=configured_password,
+    )
     repository = ItemRepository()
     writer = JsonFileItemWriter(output_path=Path("data.txt"))
     item_service = ItemService(repository=repository, writer=writer)

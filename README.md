@@ -16,6 +16,8 @@ The script behavior is a simple CLI workflow:
 
 The objective of the refactor was to keep core behavior while improving code quality and aligning the implementation with SOLID principles.
 
+The final refactored version also includes security and reliability improvements for credential handling, input validation, and file persistence.
+
 ## Original Version
 
 Source file: old-version/original_process_data.py
@@ -218,6 +220,79 @@ Why:
 Impact:
 - No runtime behavior change for user workflow.
 
+### 11) Secured credential flow with environment variables
+
+What changed:
+- Removed hardcoded credentials from the refactored runtime path.
+- Added environment-based configuration with:
+	- APP_USERNAME
+	- APP_PASSWORD
+
+Why:
+- Hardcoded credentials are a security risk and do not adapt to different environments.
+
+Impact:
+- The refactored script now requires environment variables before startup.
+
+### 12) Hardened authentication checks
+
+What changed:
+- Credential comparisons use hmac.compare_digest.
+
+Why:
+- Reduces timing-leak risk compared to direct string equality.
+
+Impact:
+- Same success/failure behavior, safer comparison path.
+
+### 13) Protected password input
+
+What changed:
+- Replaced visible password input with getpass.getpass in the refactored flow.
+
+Why:
+- Avoids exposing typed secrets on screen.
+
+Impact:
+- User experience remains similar but password is hidden.
+
+### 14) Added input validation for add command
+
+What changed:
+- Added validation for item values:
+	- trims whitespace
+	- rejects empty values
+	- rejects values longer than 500 characters
+
+Why:
+- Prevents invalid/abusive inputs and improves data quality.
+
+Impact:
+- Invalid input now returns a user-friendly error message.
+
+### 15) Improved save reliability with atomic writes
+
+What changed:
+- Save now writes to a temp file and then replaces the target file atomically.
+- Output directory is created automatically when missing.
+
+Why:
+- Reduces chance of partial/corrupted output files during failures.
+
+Impact:
+- Save path is more resilient while preserving command behavior.
+
+### 16) Added runtime error handling in command loop
+
+What changed:
+- Added explicit handling for ValueError and OSError in the refactored command loop.
+
+Why:
+- Provides clearer user feedback and prevents abrupt crashes for expected failures.
+
+Impact:
+- Application responds with readable error messages and continues running.
+
 ## SOLID Alignment Summary
 
 - Single Responsibility: each class has one focused responsibility.
@@ -231,6 +306,10 @@ Impact:
 ### Requirements
 
 - Python 3.10 or newer recommended.
+- Git Bash terminal (examples below use Git Bash syntax).
+- Environment variables for refactored version:
+	- APP_USERNAME
+	- APP_PASSWORD
 
 ### Run original version
 
@@ -242,16 +321,35 @@ python old-version/original_process_data.py
 
 ### Run refactored version
 
-From project root:
+From project root in Git Bash:
 
 ```bash
+export APP_USERNAME="admin"
+export APP_PASSWORD="your-strong-password"
 python process_data.py
 ```
 
-### Default credentials used in both exercise flows
+### Optional: persist variables in Git Bash profile
 
-- User: admin
-- Pass: 12345
+Add to ~/.bashrc (or ~/.bash_profile):
+
+```bash
+export APP_USERNAME="admin"
+export APP_PASSWORD="your-strong-password"
+```
+
+Then reload shell configuration:
+
+```bash
+source ~/.bashrc
+```
+
+### Runtime notes
+
+- The original legacy script still uses its internal hardcoded credentials.
+- The refactored script requires APP_USERNAME and APP_PASSWORD.
+- If env vars are missing, the refactored script exits with a configuration error.
+- In the refactored script, password entry is hidden.
 
 ### CLI commands after login
 
